@@ -142,14 +142,14 @@ void admitPatient() {
     newPatient->emergency_contact = strdup(temp);
 
     // Save to file
-    FILE *fp = fopen("patient.txt", "a");
+    FILE *fp = fopen("patient.csv", "a");
     if (!fp) {
         printf("Error opening file!\n");
         free(newPatient);
         return;
     }
 
-    fprintf(fp, "%d|%s|%s|%s|%s|%d|%s|%s|%s\n",
+    fprintf(fp, "%d,%s,%s,%s,%s,%d,%s,%s,%s\n",
         newPatient->id, newPatient->name, newPatient->medical_history,
         newPatient->contact_info, newPatient->dob, newPatient->doctor_id,
         newPatient->insurance_info, newPatient->emergency_contact,
@@ -159,12 +159,14 @@ void admitPatient() {
     printf("\nPatient Added Successfully!\n");
 
     // Free allocated memory
-    free(newPatient->name);
-    free(newPatient->medical_history);
-    free(newPatient->contact_info);
-    free(newPatient->dob);
-    free(newPatient->insurance_info);
-    free(newPatient->emergency_contact);
-    free(newPatient->date);
+    char *records[] = {
+	    newPatient->name, newPatient->medical_history, newPatient->contact_info,
+	    newPatient->dob, newPatient->insurance_info, newPatient->emergency_contact,
+	    newPatient->date
+    };
+
+    for (int i = 0; i < sizeof(records) / sizeof(records[0]); i++) {
+	    free(records[i]);
+    }
     free(newPatient);
 }
