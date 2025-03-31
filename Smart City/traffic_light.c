@@ -1,51 +1,109 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h> 
 #include <time.h>
 #include <string.h>
-#include <limits.h>
+
+#define BUFFER_SIZE 128
 
 typedef enum { RED, GREEN, YELLOW } LightState; // States of traffic signal
 
 typedef struct {
     LightState state;
-    int vehicle_count; // Simulated vehicle density
+    int duration;
 } TrafficSignal;
 
 typedef struct SensorNode {
     int id;
     int vehicle_count;
-    time_t last_update; 
+    time_t last_update;
     struct SensorNode* next; // Pointer for garbage collection simulation
 } TrafficSensor;
 
 TrafficSensor* sensor_head = NULL; // Head pointer
 int sensor_count = 0;
 
-// Allocate memory for a sensor
+// Allocate memory for a sensor - Dynamic memory allocation
 TrafficSensor* create_sensor(int id) {
     TrafficSensor* sensor = (TrafficSensor*)malloc(sizeof(TrafficSensor));
     if (sensor == NULL) {
         printf("Memory allocation failed for sensor %d\n", id);
-        exit(1);
-    }
+        return NULL;
+    }  
     sensor->id = id;
     sensor->vehicle_count = 0;
     sensor->last_update = time(NULL); // Properly timestamp new sensors
-    sensor->next = sensor_head; 
+    sensor->next = sensor_head;
     sensor_head = sensor;
     sensor_count++;
     printf("Sensor %d added successfully.\n", id);
     return sensor;
 }
 
-// Deallocate memory for a sensor
-void delete_sensor(TrafficSensor* sensor) {
-    if (sensor) {
-        printf("Sensor %d removed from memory.\n", sensor->id);
-        free(sensor);
-        sensor_count--;
+// Safe input handling to prevent buffer overflows
+int get_int_input(const char* prompt) {
+    char buffer[BUFFER_SIZE];
+    int value;
+    
+    while (1) {
+        printf("%s", prompt);
+        
+        if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
+            printf("Input error. Try again.\n");
+            continue;
+        }
+        
+        // Check for buffer overflow
+        if (buffer[strlen(buffer) - 1] != '\n') {
+            printf("Input too long! Maximum %d characters allowed.\n", BUFFER_SIZE - 1);
+            // Clear input buffer
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF);
+            continue;
+        }
+        
+        // Remove newline
+        buffer[strcspn(buffer, "\n")] = 0;
+        
+        // Check if input is a valid number
+        char* endptr;
+        value = strtol(buffer, &endptr, 10);
+        
+        if (*endptr != '\0') {
+            printf("Please enter a valid number.\n");
+            continue;
+        }
+        
+        return value;
     }
+}
+
+// Deallocate Memory Delete a sensor by ID
+void delete_sensor(int id) {
+    TrafficSensor* current = sensor_head;
+    TrafficSensor* prev = NULL;
+    
+    while (current != NULL) {
+        if (current->id == id) {
+            // Found the sensor to delete
+            if (prev == NULL) {
+                // It's the head node
+                sensor_head = current->next;
+            } else {
+                // It's not the head node
+                prev->next = current->next;
+            }
+            
+            printf("Sensor %d removed from memory.\n", id);
+            free(current);
+            sensor_count--;
+            return;
+        }
+        
+        prev = current;
+        current = current->next;
+    }
+    
+    printf("Sensor with ID %d not found.\n", id);
 }
 
 // Calculate the median vehicle count, ignoring faulty sensors
@@ -81,6 +139,7 @@ int calculate_median() {
 void update_signal(TrafficSignal *signal) {
     if (sensor_count == 0) {
         signal->state = RED;
+        signal->duration = 30;
         return;
     }
     
@@ -88,116 +147,182 @@ void update_signal(TrafficSignal *signal) {
     
     if (median_count > 10) {
         signal->state = GREEN;
+        signal->duration = 45;
     } else if (median_count > 5) {
         signal->state = YELLOW;
+        signal->duration = 5;
     } else {
         signal->state = RED;
+        signal->duration = 20;
     }
 }
 
 // Display traffic light state
 void display_signal(TrafficSignal *signal) {
+    printf("\n----- TRAFFIC LIGHT STATUS -----\n");
+    printf("Current state: ");
+    
     switch (signal->state) {
-        case RED:    printf("RED - Stop\n"); break;
-        case GREEN:  printf("GREEN - Go\n"); break;
-        case YELLOW: printf("YELLOW - Slow Down\n"); break;
+        case RED:    
+            printf("RED - Stop (%d seconds)\n", signal->duration); 
+            break;
+        case GREEN:  
+            printf("GREEN - Go (%d seconds)\n", signal->duration); 
+            break;
+        case YELLOW: 
+            printf("YELLOW - Slow Down (%d seconds)\n", signal->duration); 
+            break;
+    }
+    printf("-------------------------------\n");
+}
+
+// Display all sensors
+void display_sensors() {
+    TrafficSensor* current = sensor_head;
+    
+    if (!current) {
+        printf("No sensors available.\n");
+        return;
+    }
+    
+    printf("\n----- SENSORS -----\n");
+    while (current) {
+        printf("Sensor ID: %d\n", current->id);
+        printf("  Vehicle Count: %d\n", current->vehicle_count);
+        printf("---------------------------\n");
+        current = current->next;
+    }
+}
+
+// Find a sensor by ID
+TrafficSensor* find_sensor(int id) {
+    TrafficSensor* current = sensor_head;
+    
+    while (current) {
+        if (current->id == id) {
+            return current;
+        }
+        current = current->next;
+    }
+    
+    return NULL;
+}
+
+// Update sensor data with buffer overflow protection
+void update_sensor(int id) {
+    TrafficSensor* sensor = find_sensor(id);
+    
+    if (!sensor) {
+        printf("Sensor with ID %d not found.\n", id);
+        return;
+    }
+    
+    int count = get_int_input("Enter vehicle count: ");
+    if (count < 0) {
+        printf("Invalid vehicle count. Using 0 instead.\n");
+        count = 0;
+    }
+    
+    sensor->vehicle_count = count;
+    sensor->last_update = time(NULL);
+    
+    printf("Sensor %d updated successfully.\n", id);
+}
+
+// Clean up all resources to prevent memory leaks
+void cleanup_resources() {
+    TrafficSensor* current = sensor_head;
+    int freed = 0;
+    
+    while (current) {
+        TrafficSensor* next = current->next;
+        free(current);
+        current = next;
+        freed++;
+    }
+    
+    sensor_head = NULL;
+    sensor_count = 0;
+    
+    if (freed > 0) {
+        printf("Cleanup completed: %d sensors freed from memory.\n", freed);
     }
 }
 
 // Reading user input for menu selection
 void menu() {
-    TrafficSignal signal = { RED, 0 };
+    TrafficSignal signal = { RED, 30 };
     
     while (1) {
-        printf("\nOptions:\n");
-        printf("1. Enter vehicle counts\n");
-        printf("2. Add a sensor\n");
-        printf("3. Remove the oldest sensor\n");
-        printf("4. View active sensors\n");
-        printf("5. Exit\n");
-        printf("Enter choice: ");
+        printf("\n----- TRAFFIC MANAGEMENT SYSTEM -----\n");
+        printf("1. Add a new sensor\n");
+        printf("2. Update sensor data\n");
+        printf("3. View all sensors\n");
+        printf("4. Update traffic signal\n");
+        printf("5. Delete a sensor\n");
+        printf("6. Exit\n");
+        printf("-------------------------------------\n");
         
-        int choice;
-        if (scanf("%d", &choice) != 1) {
-            while (getchar() != '\n'); // Clear input buffer
-            printf("Invalid input. Please enter a number.\n");
-            continue;
-        }
+        int choice = get_int_input("Enter your choice: ");
         
-        getchar(); // Consume newline character
-        
-        if (choice == 5) {
-            printf("Exiting...\n");
-            exit(0);
-        } else if (choice == 2) {
-            create_sensor(sensor_count + 1);
-        } else if (choice == 3) {
-            if (sensor_head) {
-                TrafficSensor* to_remove = sensor_head;
-                sensor_head = sensor_head->next;
-                delete_sensor(to_remove);
-            } else {
-                printf("No sensors to remove.\n");
+        switch (choice) {
+            case 1: {
+                int id = sensor_count + 1;
+                create_sensor(id);
+                break;
             }
-        } else if (choice == 4) {
-            TrafficSensor* current = sensor_head;
-            printf("Active Sensors:\n");
-            while (current) {
-                printf("Sensor ID: %d, Vehicle Count: %d\n", current->id, current->vehicle_count);
-                current = current->next;
-            }
-            if (!sensor_head) {
-                printf("No active sensors available.\n");
-            }
-        } else if (choice == 1) {
-            printf("Enter %d vehicle counts (space-separated): ", sensor_count);
-            char buffer[256]; 
-            if (fgets(buffer, sizeof(buffer), stdin)) {
-                buffer[strcspn(buffer, "\n")] = 0; // Remove newline character
-                
-                int entered_count = 0;
-                TrafficSensor* current = sensor_head;
-                char* token = strtok(buffer, " ");
-                while (current && token) {
-                    int value = atoi(token);
-                    if (value < 0) {
-                        printf("Invalid vehicle count. Only positive integers allowed.\n");
-                        break;
-                    }
-                    current->vehicle_count = value;
-                    current->last_update = time(NULL);
-                    current = current->next;
-                    token = strtok(NULL, " ");
-                    entered_count++;
+            
+            case 2: {
+                display_sensors();
+                if (sensor_count == 0) {
+                    printf("No sensors available to update.\n");
+                    break;
                 }
                 
-                if (entered_count != sensor_count) {
-                    printf("Incorrect number of values entered. Expected %d.\n", sensor_count);
-                    continue;
-                }
+                int id = get_int_input("Enter sensor ID to update: ");
+                update_sensor(id);
+                break;
             }
-            update_signal(&signal);
-            display_signal(&signal);
-        } else {
-            printf("Invalid choice. Please select a valid option.\n");
+            
+            case 3:
+                display_sensors();
+                break;
+                
+            case 4:
+                update_signal(&signal);
+                display_signal(&signal);
+                break;
+                
+            case 5: {
+                display_sensors();
+                if (sensor_count == 0) {
+                    printf("No sensors available to delete.\n");
+                    break;
+                }
+                
+                int id = get_int_input("Enter sensor ID to delete: ");
+                delete_sensor(id);
+                break;
+            }
+            
+            case 6:
+                cleanup_resources();
+                printf("Exiting the system.\n");
+                exit(0);
+                
+            default:
+                printf("Invalid choice. Please try again.\n");
         }
     }
 }
 
 int main() {
-    int num_sensors;
-    printf("Enter number of initial sensors: ");
-    if (scanf("%d", &num_sensors) != 1 || num_sensors <= 0) {
-        printf("Invalid number of sensors. Exiting.\n");
-        return 1;
-    }
-    getchar(); // Consume newline left by scanf
+    printf("Welcome to the Traffic Light Management System\n");
+    printf("--------------------------------------------\n");
     
-    for (int i = 1; i <= num_sensors; i++) {
-        create_sensor(i);
-    }
+    // Set up signal handler to ensure cleanup on unexpected termination
+    atexit(cleanup_resources);
     
     menu(); // Start input handling loop
     return 0;
 }
-
